@@ -60,6 +60,10 @@ sub new_empty {
   return bless \%T, $class;
 }
 
+# modify this to do "open_file" and "read_line" calls
+# so that we don't have to read in the entire file at
+# once if it's too large to do so?
+
 sub new_from_file {
   my $class=shift;
   my $file=shift;
@@ -74,13 +78,17 @@ sub new_from_file {
     push @{$T->{S}}, $_;
     # need validation on the file contents -- correct file formats are assumed below
     given ($_) {
-      when (/^\s*$/) { next }  # ignore blank lines
+      when (/^[\\]?\s*$/) { next }  # ignore blank lines
       when (/^\\\s(.*)$/) { push @{$T->{C}}, $1 }
       when (/^\\(\S+)\s*[=]\s*(.*)$/) { $T->{K}{$1}=$2 }
       when (/^[|]/) { 
 	my @cm=marker_capture($_,'|');
-	if ($c{M}) { die "inconsistent column markers; line is:\n$_\n" unless identical_arrays(\@cm,\@{$T->{M}}) }
-	else { $T->{M}=\@cm; $c{M}=1 }
+	if ($c{M}) { 
+	  unless (identical_arrays(\@cm,\@{$T->{M}})) {
+	    print Dumper($T),"\n";
+	    die "inconsistent column markers; line is:\n$_\n";
+	  }
+	} else { $T->{M}=\@cm; $c{M}=1 }
 	my @c=map { trim_white($_) } column_capture($_,@{$T->{M}});
 	for my $m (@m) {
 	  next if $c{$m};  # already have this column info
@@ -90,7 +98,10 @@ sub new_from_file {
 	}
       }
       default {  # assume a data line, and sort into columns
-	die "Apparent data line prior to defining mandatory headers:\n$_\n" unless ($c{H} && $c{T});
+	unless ($c{H} && $c{T}) {
+	  print Dumper($T),"\n";
+	  die "Apparent data line prior to defining mandatory headers:\n$_\n" 
+	}
 	my @c=map { trim_white($_) } column_capture($_,@{$T->{M}});
 	for my $h (@{$T->{H}}) { push @{$T->{D}{$h}}, shift(@c) }
       }
